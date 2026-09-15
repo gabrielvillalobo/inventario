@@ -301,15 +301,19 @@ input{font-family:var(--sans);font-size:16px}
   <div id="listaRecuentos"></div>
   <button class="principal" id="btnNuevo">Nuevo recuento</button>
   <div class="acciones" style="margin-top:10px">
-    <button id="btnEtiquetasInicio">Etiquetas <span id="cuentaEtiquetas" class="num">0</span></button>
+    <button id="btnSoloEtiquetas">Solo etiquetas</button>
+    <button id="btnEtiquetasInicio">Para imprimir <span id="cuentaEtiquetas" class="num">0</span></button>
+  </div>
+  <div class="acciones oculto" id="btnBrochero" style="margin-top:8px">
+    <button id="btnNuevoCB">Contar en Cura Brochero</button>
   </div>
   <div class="acciones" style="margin-top:8px">
     <button id="btnCopia">Guardar copia</button>
-    <button id="btnRestaurar">Restaurar copia</button>
+    <button id="btnRestaurar">Unir o restaurar</button>
   </div>
   <input type="file" accept=".json,application/json" id="archivoCopia" class="oculto">
   <div class="aviso vidrio" id="avisoPadron">Cargando el padrón de Dux…</div>
-  <p class="nota">Los recuentos quedan guardados en este teléfono. Al cerrar uno sale la lista para el Ajuste de Stock de Dux.</p>
+  <p class="nota">Los recuentos quedan guardados en este teléfono. Al cerrar uno sale la lista para el Ajuste de Stock de Dux. Si cuentan entre varios, cada uno guarda su copia, se la pasa al que va a cerrar el recuento y ahí se tocá “Unir o restaurar”: se suma lo de todos.</p>
 </div>
 
 <!-- ============ contar ============ -->
@@ -466,7 +470,7 @@ input{font-family:var(--sans);font-size:16px}
   <div class="acciones">
     <button id="btnTexto">Mandar por WhatsApp</button>
   </div>
-  <p class="nota">"Solo diferencias" trae código y cantidad real: es lo que se carga en <b>Stock → Ajuste Stock</b> de Dux, con el depósito Mina Clavero activo. Los productos que no escaneaste quedan afuera, no se ponen en cero.</p>
+  <p class="nota">"Solo diferencias" trae código y cantidad real: es lo que se carga en <b>Stock → Ajuste Stock</b> de Dux, con el depósito correcto activo en la barra de arriba de Dux. Los productos que no escaneaste quedan afuera, no se ponen en cero.</p>
   <div class="acciones"><button class="rojo" id="btnBorrarRecuento">Borrar este recuento</button></div>
 </div>
 
@@ -486,7 +490,8 @@ var $=function(id){ return document.getElementById(id); };
 var CLAVE='recuento-mc-v1';
 
 /* ==================== estado ==================== */
-var padron=[], porBarra={}, porCodigo={}, listo=false;
+var padron=[], porBarra={}, porCodigo={}, listo=false, hayBrochero=false;
+var modoEtq=false;
 var datos={ recuentos:[] }, actual=null, seleccion=null, ultimaAccion=null;
 
 function cargar(){
@@ -510,24 +515,27 @@ function traerPadron(){
     padron = j.productos || j;
     var limpiar=function(v){ return (!v || v==='[object Object]' || v==='null') ? '' : String(v); };
     padron.forEach(function(p,i){
+      if(p.s2 !== undefined) hayBrochero=true;
       p.r=limpiar(p.r); p.u=limpiar(p.u); p.m=limpiar(p.m);
       porCodigo[p.c]=i;
       (p.b||[]).forEach(function(b){ porBarra[String(b).trim()]=i; });
       p.k=norma(p.n+' '+p.c+' '+p.m+' '+(p.b||[]).join(' '));
     });
     listo=true;
+    $('btnBrochero').classList.toggle('oculto', !hayBrochero);
     pintarEtiquetas();
     $('cargando').classList.add('oculto');
     var fecha = j.fecha ? new Date(j.fecha) : null;
     var dias = fecha ? Math.floor((Date.now()-fecha.getTime())/86400000) : null;
-    var txt='<b>'+padron.length.toLocaleString('es-AR')+'</b> productos de Mina Clavero';
+    var txt='<b>'+padron.length.toLocaleString('es-AR')+'</b> productos';
     if(fecha) txt+=' · stock de Dux al '+fecha.toLocaleDateString('es-AR');
     txt+='. Funciona sin internet.';
-    if(dias!==null && dias>=15){
+    if(dias!==null && dias>=10){
       txt+='<br><span style="color:var(--marca);font-weight:650">Pasaron '+dias+' días desde esa foto del stock: '+
-           'lo que se vendió o entró después no está reflejado. Pedí una actualización antes de un recuento grande.</span>';
+           'lo que se vendió o entró después no está reflejado. Actualizalo desde la PC del mostrador antes de contar o de imprimir precios.</span>';
     }
     $('avisoPadron').innerHTML=txt;
+    $('subTitulo').textContent = hayBrochero ? 'Mina Clavero y Cura Brochero' : 'Depósito Mina Clavero';
     pintarInicio();
   }).catch(function(){
     $('cargandoTxt').textContent='No pude cargar el padrón de productos. Abrí la app con internet la primera vez.';
@@ -536,16 +544,35 @@ function traerPadron(){
 }
 
 /* ==================== recuentos ==================== */
-function nuevoRecuento(){ crearRecuento(); }
-function crearRecuento(){
+function nombreDeposito(dep){ return dep==='cb' ? 'Cura Brochero' : 'Mina Clavero'; }
+function stockEn(p,dep){ return (dep==='cb' ? (p.s2||0) : (p.s||0)); }
+function stockDe(p){ return stockEn(p, actual ? actual.dep : 'mc'); }
+
+function nuevoRecuento(dep){ crearRecuento(dep); }
+function crearRecuento(dep){
+  dep = dep==='cb' ? 'cb' : 'mc';
   var d=new Date(), p2=function(n){ return (n<10?'0':'')+n; };
   var nombre='Recuento del '+d.getDate()+'/'+(d.getMonth()+1)+' '+p2(d.getHours())+':'+p2(d.getMinutes());
-  var r={ id:'r'+Date.now().toString(36), nombre:nombre, creado:Date.now(), items:{}, raros:{} };
+  if(dep==='cb') nombre+=' · Cura Brochero';
+  var r={ id:'r'+Date.now().toString(36), nombre:nombre, dep:dep, creado:Date.now(), items:{}, raros:{} };
   datos.recuentos.unshift(r);
   guardar(); abrirRecuento(r.id);
 }
+function abrirSoloEtiquetas(){
+  if(!listo){ toast('Esperá que termine de cargar el padrón'); return; }
+  modoEtq=true; actual=null; seleccion=null;
+  $('pSector').textContent='Solo etiquetas';
+  $('btnDeshacer').classList.add('oculto');
+  $('btnTerminar').classList.add('oculto');
+  $('pInicio').classList.add('oculto');
+  $('pContar').classList.remove('oculto');
+  pintarProducto(); pintarEtiquetas(); pintarCuenta();
+  encenderCamara();
+}
 function abrirRecuento(id){
-  actual=null;
+  modoEtq=false; actual=null;
+  $('btnDeshacer').classList.remove('oculto');
+  $('btnTerminar').classList.remove('oculto');
   datos.recuentos.forEach(function(r){ if(r.id===id) actual=r; });
   if(!actual) return;
   $('pSector').textContent=actual.nombre;
@@ -555,6 +582,7 @@ function abrirRecuento(id){
   encenderCamara();
 }
 function volverInicio(){
+  modoEtq=false;
   apagarCamara();
   $('pContar').classList.add('oculto');
   $('pInicio').classList.remove('oculto');
@@ -568,7 +596,7 @@ function pintarInicio(){
     Object.keys(r.items).forEach(function(cod){
       var i=porCodigo[cod];
       if(i===undefined) return;
-      if(r.items[cod].cant !== padron[i].s) dif++;
+      if(r.items[cod].cant !== stockEn(padron[i], r.dep)) dif++;
     });
     var f=new Date(r.creado);
     return '<button class="recuento vidrio" data-id="'+r.id+'">'+
@@ -580,6 +608,11 @@ function pintarInicio(){
     b.addEventListener('click',function(){ abrirRecuento(b.getAttribute('data-id')); });
   });
 }
+function firma(r){
+  var cods=Object.keys(r.items||{}).sort(), suma=0, tope=0;
+  cods.forEach(function(c){ suma+=(r.items[c].cant||0); tope=Math.max(tope, r.items[c].ts||0); });
+  return r.id+'|'+cods.length+'|'+suma+'|'+tope;
+}
 function escapar(s){ return String(s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
 /* ==================== contar ==================== */
@@ -588,6 +621,7 @@ function alLeer(codigo){
   if(i===undefined) i=porCodigo[codigo];
   if(i===undefined){ sumarRaro(codigo); return; }
   var p=padron[i];
+  if(modoEtq){ seleccion=p; pintarProducto(); mostrarPulso('$'); return; }
   if(seleccion && seleccion.c===p.c){ sumar(1); }
   else { seleccion=p; sumar(1); }
 }
@@ -612,14 +646,16 @@ function fijar(n){
   guardar(); pintarProducto(); pintarCuenta();
 }
 function sumarRaro(codigo){
-  if(!actual) return;
-  actual.raros[codigo]=(actual.raros[codigo]||0)+1;
-  ultimaAccion={ tipo:'raro', cod:codigo };
-  guardar();
+  if(!actual && !modoEtq) return;
+  if(actual){
+    actual.raros[codigo]=(actual.raros[codigo]||0)+1;
+    ultimaAccion={ tipo:'raro', cod:codigo };
+    guardar();
+  }
   seleccion=null;
   $('tarjetaProducto').classList.add('vacia');
   $('pNombre').textContent='Ese código no está en Dux';
-  $('pCod').textContent=codigo+' · lo anoté aparte ('+actual.raros[codigo]+')';
+  $('pCod').textContent=codigo+(actual?' · lo anoté aparte ('+actual.raros[codigo]+')':'');
   $('contadores').classList.add('oculto');
   $('precios').classList.add('oculto');
   $('pDif').classList.add('oculto');
@@ -629,15 +665,17 @@ function sumarRaro(codigo){
 function pintarProducto(){
   if(!seleccion){
     $('tarjetaProducto').classList.add('vacia');
-    $('pNombre').textContent='Apuntá al código de barras del producto';
+    $('pNombre').textContent = modoEtq ? 'Apuntá al código para ver el precio'
+                                       : 'Apuntá al código de barras del producto';
     $('pCod').textContent='';
     $('contadores').classList.add('oculto');
     $('precios').classList.add('oculto');
     $('pDif').classList.add('oculto');
     return;
   }
-  var p=seleccion, it=actual.items[p.c];
+  var p=seleccion, it=actual ? actual.items[p.c] : null;
   var hay = it ? it.cant : 0;
+  var dux = stockDe(p);
   $('tarjetaProducto').classList.remove('vacia');
   $('pNombre').textContent=p.n;
   $('pCod').textContent=p.c+(p.u?' · '+p.u:(p.r?' · '+p.r:''));
@@ -645,10 +683,17 @@ function pintarProducto(){
   $('pLista').textContent=fp(p.l);
   $('pEfectivo').textContent=fp(p.e);
   $('precios').classList.toggle('oculto', !(p.l>0 || p.e>0));
-  $('pDux').textContent=p.s;
+  if(modoEtq){
+    $('contadores').classList.add('oculto');
+    $('pDif').classList.add('oculto');
+    $('btnNota').classList.add('oculto');
+    $('pNota').classList.add('oculto');
+    return;
+  }
+  $('pDux').textContent=dux;
   $('pHay').textContent=hay;
   $('contadores').classList.remove('oculto');
-  var d=hay-p.s, e=$('pDif');
+  var d=hay-dux, e=$('pDif');
   e.classList.remove('oculto','igual','mas','menos');
   var bn=$('btnNota'), nt=$('pNota');
   if(it && it.nota){ nt.textContent='“'+it.nota+'”'; nt.classList.remove('oculto'); bn.classList.add('oculto'); }
@@ -659,9 +704,10 @@ function pintarProducto(){
   else { e.classList.add('menos'); e.textContent='Faltan '+Math.abs(d)+' respecto de Dux'; }
 }
 function pintarCuenta(){
+  if(modoEtq){ $('btnLista').innerHTML='Etiquetas <span id="pCuenta" class="num">'+totalEtiquetas()+'</span>'; return; }
   if(!actual) return;
-  var n=Object.keys(actual.items).length+Object.keys(actual.raros).length;
-  $('pCuenta').textContent=n;
+  $('btnLista').innerHTML='Contados <span id="pCuenta" class="num">'+
+    (Object.keys(actual.items).length+Object.keys(actual.raros).length)+'</span>';
 }
 function mostrarPulso(t){
   var el=$('pulso'); el.textContent=t;
@@ -758,7 +804,10 @@ function pintarResultados(q){
 
 /* ==================== lista ==================== */
 var filtro='todos';
-$('btnLista').addEventListener('click',function(){ abrirHoja('hojaLista'); pintarLista(); });
+$('btnLista').addEventListener('click',function(){
+  if(modoEtq){ abrirHoja('hojaEtiquetas'); pintarEtiquetas(); return; }
+  abrirHoja('hojaLista'); pintarLista();
+});
 Array.prototype.forEach.call($('hojaLista').querySelectorAll('.filtros button'),function(b){
   b.addEventListener('click',function(){
     filtro=b.getAttribute('data-filtro');
@@ -854,7 +903,7 @@ $('btnTerminar').addEventListener('click',function(){
 function csvFaltantes(){
   var f=filas().filter(function(x){ return x.dif<0; });
   f.sort(function(a,b){ return Math.abs(b.dif)-Math.abs(a.dif); });
-  var l=['Libreria Pitagoras · Deposito Mina Clavero · faltantes del recuento "'+actual.nombre+'" · '+new Date().toLocaleDateString('es-AR'),
+  var l=['Libreria Pitagoras · Deposito '+nombreDeposito(actual.dep)+' · faltantes del recuento "'+actual.nombre+'" · '+new Date().toLocaleDateString('es-AR'),
          ['Codigo','Producto','Marca','Rubro','StockDux','Contado','Faltan','Motivo'].join(';')];
   var totalUnidades=0;
   f.forEach(function(x){
@@ -870,7 +919,7 @@ function csvFaltantes(){
 function csv(soloDif){
   var f=filas();
   if(soloDif) f=f.filter(function(x){ return x.dif!==0; });
-  var l=['Libreria Pitagoras · Deposito Mina Clavero · recuento "'+actual.nombre+'" · '+new Date().toLocaleDateString('es-AR'),
+  var l=['Libreria Pitagoras · Deposito '+nombreDeposito(actual.dep)+' · recuento "'+actual.nombre+'" · '+new Date().toLocaleDateString('es-AR'),
          ['Codigo','Producto','StockDux','Contado','Diferencia','Nota'].join(';')];
   f.forEach(function(x){
     l.push([x.p.c,'"'+String(x.p.n).replace(/"/g,'""')+'"',x.p.s,x.cant,x.dif,'"'+String(x.nota||'').replace(/"/g,'""')+'"'].join(';'));
@@ -907,7 +956,7 @@ $('btnCsvFaltan').addEventListener('click',function(){
 $('btnCsvAjuste').addEventListener('click',function(){ bajar(nombreArchivo('-ajuste'),csv(true)); });
 $('btnTexto').addEventListener('click',function(){
   var f=filas().filter(function(x){ return x.dif!==0; });
-  var l=['Librería Pitágoras · Recuento '+actual.nombre+' · '+new Date().toLocaleDateString('es-AR'),'Depósito Mina Clavero','',
+  var l=['Librería Pitágoras · Recuento '+actual.nombre+' · '+new Date().toLocaleDateString('es-AR'),'Depósito '+nombreDeposito(actual.dep),'',
          'Ajuste de stock (código → cantidad real):'];
   f.forEach(function(x){ l.push(x.p.c+' → '+x.cant+'   ('+x.p.n.slice(0,32)+', Dux '+x.p.s+(x.nota?', '+x.nota:'')+')'); });
   if(!f.length) l.push('Sin diferencias.');
@@ -1232,23 +1281,24 @@ function sumarEtiqueta(cod,n){
   e.forEach(function(x){ if(x.c===cod) hay=x; });
   if(hay) hay.cant+=n;
   else e.push({ c:cod, cant:n, ts:Date.now() });
-  guardar(); pintarEtiquetas();
+  guardar(); pintarEtiquetas(); if(modoEtq) pintarCuenta();
   toast(n===1?'Etiqueta agregada ('+totalEtiquetas()+')':n+' etiquetas agregadas ('+totalEtiquetas()+')');
 }
 var etqElegido=null;
 function pedirCantidadEtiqueta(p){
   etqElegido=p;
-  $('etqProducto').innerHTML='<b style="color:var(--tinta)">'+escapar(p.n)+'</b><br>'+plataEtq(p.l>0?p.l:p.e)+' · stock en Dux: '+p.s;
+  var dux=stockDe(p);
+  $('etqProducto').innerHTML='<b style="color:var(--tinta)">'+escapar(p.n)+'</b><br>'+plataEtq(p.l>0?p.l:p.e)+' · stock en Dux: '+dux;
   $('etqCant').value=1;
-  $('etqStock').textContent = p.s>0 ? 'Como el stock ('+p.s+')' : 'Sin stock';
-  $('etqStock').disabled = !(p.s>0);
+  $('etqStock').textContent = dux>0 ? 'Como el stock ('+dux+')' : 'Sin stock';
+  $('etqStock').disabled = !(dux>0);
   Array.prototype.forEach.call($('etqRapidos').querySelectorAll('button'),function(b){ b.classList.toggle('on', b.getAttribute('data-n')==='1'); });
   abrirHoja('hojaEtqCant');
 }
 Array.prototype.forEach.call($('etqRapidos').querySelectorAll('button'),function(b){
   b.addEventListener('click',function(){
     var v=b.getAttribute('data-n');
-    var n = v==='stock' ? (etqElegido?etqElegido.s:1) : +v;
+    var n = v==='stock' ? (etqElegido?stockDe(etqElegido):1) : +v;
     $('etqCant').value=Math.max(1,n);
     Array.prototype.forEach.call($('etqRapidos').querySelectorAll('button'),function(x){ x.classList.toggle('on',x===b); });
   });
@@ -1369,20 +1419,47 @@ $('archivoCopia').addEventListener('change',function(){
     try{
       var o=JSON.parse(String(lector.result));
       if(!o.recuentos) throw 0;
-      var vistos={}; datos.recuentos.forEach(function(r){ vistos[r.id]=1; });
-      var suma=0;
-      o.recuentos.forEach(function(r){ if(!vistos[r.id]){ datos.recuentos.push(r); suma++; } });
+      var mios={}; datos.recuentos.forEach(function(r){ mios[r.id]=r; });
+      var nuevos=0, unidos=0, repetidos=0, sumados=0;
+      o.recuentos.forEach(function(r){
+        var mio=mios[r.id];
+        if(!mio){ datos.recuentos.push(r); nuevos++; return; }
+        var huella=firma(r);
+        mio.unidos = mio.unidos || [];
+        if(mio.unidos.indexOf(huella)>=0){ repetidos++; return; }
+        if(!confirm('Ya tenés "'+r.nombre+'".\n\n¿Le sumo lo que contaron en el otro teléfono?')) { repetidos++; return; }
+        Object.keys(r.items||{}).forEach(function(cod){
+          var a=mio.items[cod], b=r.items[cod];
+          if(!a){ mio.items[cod]={ cant:b.cant, ts:b.ts, nota:b.nota }; }
+          else { a.cant += b.cant; a.ts=Math.max(a.ts||0,b.ts||0); if(!a.nota && b.nota) a.nota=b.nota; }
+          sumados++;
+        });
+        Object.keys(r.raros||{}).forEach(function(cod){
+          mio.raros[cod]=(mio.raros[cod]||0)+r.raros[cod];
+        });
+        mio.unidos.push(huella);
+        unidos++;
+      });
       datos.recuentos.sort(function(a,b){ return b.creado-a.creado; });
       guardar(); pintarInicio();
-      toast(suma?('Se sumaron '+suma+' recuentos'):'Ya los tenías todos');
+      var m=[];
+      if(nuevos) m.push(nuevos+(nuevos===1?' recuento nuevo':' recuentos nuevos'));
+      if(unidos) m.push('unidos '+sumados+' productos');
+      if(!m.length) m.push(repetidos?'Eso ya lo tenías':'No había nada para sumar');
+      toast(m.join(' · '));
     }catch(e){ toast('Ese archivo no es una copia de recuentos'); }
   };
   lector.readAsText(f);
 });
 $('btnNuevo').addEventListener('click',function(){
   if(!listo){ toast('Esperá que termine de cargar el padrón'); return; }
-  nuevoRecuento();
+  nuevoRecuento('mc');
 });
+$('btnNuevoCB').addEventListener('click',function(){
+  if(!listo){ toast('Esperá que termine de cargar el padrón'); return; }
+  nuevoRecuento('cb');
+});
+$('btnSoloEtiquetas').addEventListener('click',abrirSoloEtiquetas);
 if('serviceWorker' in navigator){
   window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
 }

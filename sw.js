@@ -1,5 +1,5 @@
 /* Recuento Mina Clavero · service worker */
-var CACHE='recuento-v2';
+var CACHE='recuento-v3';
 var ARCHIVOS=['./','./index.html','./manifest.webmanifest','./productos.json',
   './icon-180.png','./icon-192.png','./icon-512.png','./icon-512-maskable.png',
   'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js'];
