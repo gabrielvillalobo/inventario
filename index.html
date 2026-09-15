@@ -156,7 +156,11 @@ input{font-family:var(--sans);font-size:16px}
 #pInicio h1{margin:0 0 2px;font-size:27px;font-weight:700;letter-spacing:-.035em}
 #pInicio .sub{color:var(--tinta-2);font-size:13.5px;margin-bottom:18px}
 .tarjeta{border-radius:22px;padding:14px 16px}
-.recuento{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;
+.recuento .abrir{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:1;min-width:0;text-align:left;padding:0}
+.recuento .tirar{flex:none;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+  color:var(--tinta-2);background:var(--pastilla)}
+.recuento .tirar:active{transform:scale(.9);color:var(--error)}
+.recuento{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;
   border-radius:20px;padding:13px 15px;margin-bottom:8px}
 .recuento b{display:block;font-size:16px;font-weight:650;letter-spacing:-.02em}
 .recuento small{display:block;font-size:12px;color:var(--tinta-2)}
@@ -252,6 +256,12 @@ input{font-family:var(--sans);font-size:16px}
 .fila .der b{font-size:15px}
 .fila .der small{display:block}
 .fila .der .d{font-weight:650}
+.pasos{display:flex;align-items:center;gap:8px}
+.pasos .paso{width:36px;height:36px;border-radius:50%;background:var(--pastilla);font-size:20px;font-weight:600;
+  display:grid;place-items:center;color:var(--tinta);flex:none}
+.pasos .paso:active{transform:scale(.9)}
+.pasos b{min-width:26px;text-align:center;font-size:19px;font-variant-numeric:tabular-nums}
+.pasos b.contado{color:var(--ok)}
 .d.menos{color:var(--error)} .d.mas{color:var(--acento)} .d.igual{color:var(--ok)}
 .buscador{display:flex;gap:8px;margin-bottom:10px;flex:none}
 .buscador input{flex:1;min-width:0;padding:13px 15px;border-radius:16px;background-color:var(--vidrio-2);
@@ -303,9 +313,6 @@ input{font-family:var(--sans);font-size:16px}
   <div class="acciones" style="margin-top:10px">
     <button id="btnSoloEtiquetas">Solo etiquetas</button>
     <button id="btnEtiquetasInicio">Para imprimir <span id="cuentaEtiquetas" class="num">0</span></button>
-  </div>
-  <div class="acciones oculto" id="btnBrochero" style="margin-top:8px">
-    <button id="btnNuevoCB">Contar en Cura Brochero</button>
   </div>
   <div class="acciones" style="margin-top:8px">
     <button id="btnCopia">Guardar copia</button>
@@ -424,7 +431,8 @@ input{font-family:var(--sans);font-size:16px}
 <div class="hoja" id="hojaVariantes">
   <h2><span id="tituloVariantes">Elegí cuál es</span> <button data-cerrar>Cancelar</button></h2>
   <div class="lista" id="listaVariantes"></div>
-  <p class="nota">Estos productos comparten el mismo código de barras en Dux. Elegí el que tenés en la mano; después, los escaneos siguientes suman a ese mismo hasta que toques “Es otra variante”.</p>
+  <div class="acciones oculto" id="pieVariantes"><button class="primario" data-cerrar>Listo</button></div>
+  <p class="nota">Comparten el mismo código de barras en Dux. Contá acá mismo con − y +, las que haga falta, y después tocá Listo.</p>
 </div>
 
 <div class="hoja" id="hojaEtqCant">
@@ -533,7 +541,6 @@ function traerPadron(){
       p.k=norma(p.n+' '+p.c+' '+p.m+' '+(p.b||[]).join(' '));
     });
     listo=true;
-    $('btnBrochero').classList.toggle('oculto', !hayBrochero);
     pintarEtiquetas();
     $('cargando').classList.add('oculto');
     var fecha = j.fecha ? new Date(j.fecha) : null;
@@ -546,7 +553,6 @@ function traerPadron(){
            'lo que se vendió o entró después no está reflejado. Actualizalo desde la PC del mostrador antes de contar o de imprimir precios.</span>';
     }
     $('avisoPadron').innerHTML=txt;
-    $('subTitulo').textContent = hayBrochero ? 'Mina Clavero y Cura Brochero' : 'Depósito Mina Clavero';
     pintarInicio();
   }).catch(function(){
     $('cargandoTxt').textContent='No pude cargar el padrón de productos. Abrí la app con internet la primera vez.';
@@ -610,19 +616,44 @@ function pintarInicio(){
       if(r.items[cod].cant !== stockEn(padron[i], r.dep)) dif++;
     });
     var f=new Date(r.creado);
-    return '<button class="recuento vidrio" data-id="'+r.id+'">'+
-      '<span><b>'+escapar(r.nombre)+'</b><small>'+f.toLocaleDateString('es-AR')+' · '+
-        ('0'+f.getHours()).slice(-2)+':'+('0'+f.getMinutes()).slice(-2)+'</small></span>'+
-      '<span class="cifra"><b>'+n+'</b><small>'+(dif?dif+' con diferencia':'sin diferencias')+'</small></span></button>';
+    return '<div class="recuento vidrio" data-id="'+r.id+'">'+
+      '<button class="abrir" data-id="'+r.id+'">'+
+        '<span><b>'+escapar(r.nombre)+'</b><small>'+f.toLocaleDateString('es-AR')+' · '+
+          ('0'+f.getHours()).slice(-2)+':'+('0'+f.getMinutes()).slice(-2)+'</small></span>'+
+        '<span class="cifra"><b>'+n+'</b><small>'+(dif?dif+' con diferencia':'sin diferencias')+'</small></span>'+
+      '</button>'+
+      '<button class="tirar" data-borrar="'+r.id+'" aria-label="Borrar '+escapar(r.nombre)+'">'+
+        '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+
+        '<path d="M4 6.5h16M9.5 6.5V4.8h5v1.7M6.6 6.5l.9 12.2a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l.9-12.2"/></svg>'+
+      '</button></div>';
   }).join('');
-  Array.prototype.forEach.call(c.querySelectorAll('.recuento'),function(b){
+  Array.prototype.forEach.call(c.querySelectorAll('.abrir'),function(b){
     b.addEventListener('click',function(){ abrirRecuento(b.getAttribute('data-id')); });
+  });
+  Array.prototype.forEach.call(c.querySelectorAll('.tirar'),function(b){
+    b.addEventListener('click',function(e){
+      e.stopPropagation();
+      borrarRecuento(b.getAttribute('data-borrar'));
+    });
   });
 }
 function firma(r){
   var cods=Object.keys(r.items||{}).sort(), suma=0, tope=0;
   cods.forEach(function(c){ suma+=(r.items[c].cant||0); tope=Math.max(tope, r.items[c].ts||0); });
   return r.id+'|'+cods.length+'|'+suma+'|'+tope;
+}
+function borrarRecuento(id){
+  var r=null;
+  datos.recuentos.forEach(function(x){ if(x.id===id) r=x; });
+  if(!r) return;
+  var n=Object.keys(r.items).length;
+  var aviso='¿Borrar "'+r.nombre+'"?';
+  if(n) aviso+='\n\nTiene '+n+(n===1?' producto contado':' productos contados')+'. No se puede deshacer.';
+  if(!confirm(aviso)) return;
+  datos.recuentos=datos.recuentos.filter(function(x){ return x.id!==id; });
+  if(actual && actual.id===id) actual=null;
+  guardar(); pintarInicio();
+  toast('Recuento borrado');
 }
 function escapar(s){ return String(s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
@@ -698,22 +729,50 @@ function tomar(p){
   else { seleccion=p; sumar(1); }
 }
 function abrirVariantes(){
+  pintarVariantes();
+  abrirHoja('hojaVariantes');
+}
+function pintarVariantes(){
   var c=$('listaVariantes');
   $('tituloVariantes').textContent='Ese código lo comparten '+grupoActual.length+' productos';
+  $('pieVariantes').classList.toggle('oculto', modoEtq);
   c.innerHTML=grupoActual.map(function(i){
     var p=padron[i];
     var precio = (p.l>0?p.l:p.e);
-    return '<button class="fila" data-i="'+i+'"><span><b>'+escapar(p.n)+'</b>'+
-      '<small>'+p.c+(precio>0?' · $ '+Number(precio).toLocaleString('es-AR',{maximumFractionDigits:0}):'')+'</small></span>'+
-      '<span class="der"><b class="num">'+stockEn(p, actual?actual.dep:'mc')+'</b><small>en Dux</small></span></button>';
+    var dux = stockEn(p, actual?actual.dep:'mc');
+    var it = actual ? actual.items[p.c] : null;
+    var cab = '<span><b>'+escapar(p.n)+'</b><small>'+p.c+
+      (precio>0?' · $ '+Number(precio).toLocaleString('es-AR',{maximumFractionDigits:0}):'')+
+      ' · Dux dice '+dux+'</small></span>';
+    if(modoEtq){
+      return '<button class="fila" data-i="'+i+'">'+cab+
+        '<span class="der"><b class="num">'+dux+'</b><small>en Dux</small></span></button>';
+    }
+    var hay = it ? it.cant : 0;
+    return '<div class="fila">'+cab+
+      '<span class="der pasos">'+
+        '<button class="paso" data-i="'+i+'" data-d="-1">−</button>'+
+        '<b class="num'+(it?' contado':'')+'">'+hay+'</b>'+
+        '<button class="paso" data-i="'+i+'" data-d="1">+</button>'+
+      '</span></div>';
   }).join('');
-  Array.prototype.forEach.call(c.querySelectorAll('.fila'),function(b){
+  Array.prototype.forEach.call(c.querySelectorAll('.fila[data-i]'),function(b){
     b.addEventListener('click',function(){
       cerrarHoja();
       tomar(padron[+b.getAttribute('data-i')]);
     });
   });
-  abrirHoja('hojaVariantes');
+  Array.prototype.forEach.call(c.querySelectorAll('.paso'),function(b){
+    b.addEventListener('click',function(e){
+      e.stopPropagation();
+      var p=padron[+b.getAttribute('data-i')];
+      var d=+b.getAttribute('data-d');
+      if(d<0 && !(actual && actual.items[p.c])) return;
+      seleccion=p;
+      sumar(d);
+      pintarVariantes();
+    });
+  });
 }
 $('btnVariante').addEventListener('click',function(){ if(grupoActual.length>1) abrirVariantes(); });
 
@@ -1513,10 +1572,6 @@ $('archivoCopia').addEventListener('change',function(){
 $('btnNuevo').addEventListener('click',function(){
   if(!listo){ toast('Esperá que termine de cargar el padrón'); return; }
   nuevoRecuento('mc');
-});
-$('btnNuevoCB').addEventListener('click',function(){
-  if(!listo){ toast('Esperá que termine de cargar el padrón'); return; }
-  nuevoRecuento('cb');
 });
 $('btnSoloEtiquetas').addEventListener('click',abrirSoloEtiquetas);
 if('serviceWorker' in navigator){
