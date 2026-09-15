@@ -339,6 +339,7 @@ input{font-family:var(--sans);font-size:16px}
     <div class="producto vidrio vacia" id="tarjetaProducto">
       <div class="nom" id="pNombre">Apuntá al código de barras del producto</div>
       <div class="cod" id="pCod"></div>
+      <button class="notaBtn oculto" id="btnVariante" style="margin-top:8px">Es otra variante</button>
       <div class="precios oculto" id="precios">
         <div><span class="lbl">Lista</span><b id="pLista">—</b></div>
         <div><span class="lbl">Efectivo</span><b id="pEfectivo">—</b></div>
@@ -420,6 +421,12 @@ input{font-family:var(--sans);font-size:16px}
 </div>
 
 <!-- hoja: cuantas etiquetas -->
+<div class="hoja" id="hojaVariantes">
+  <h2><span id="tituloVariantes">Elegí cuál es</span> <button data-cerrar>Cancelar</button></h2>
+  <div class="lista" id="listaVariantes"></div>
+  <p class="nota">Estos productos comparten el mismo código de barras en Dux. Elegí el que tenés en la mano; después, los escaneos siguientes suman a ese mismo hasta que toques “Es otra variante”.</p>
+</div>
+
 <div class="hoja" id="hojaEtqCant">
   <h2>¿Cuántas etiquetas? <button data-cerrar>Cancelar</button></h2>
   <p class="nota" id="etqProducto"></p>
@@ -518,7 +525,11 @@ function traerPadron(){
       if(p.s2 !== undefined) hayBrochero=true;
       p.r=limpiar(p.r); p.u=limpiar(p.u); p.m=limpiar(p.m);
       porCodigo[p.c]=i;
-      (p.b||[]).forEach(function(b){ porBarra[String(b).trim()]=i; });
+      (p.b||[]).forEach(function(b){
+        var t=String(b).trim(); if(!t) return;
+        if(!porBarra[t]) porBarra[t]=[];
+        if(porBarra[t].indexOf(i)<0) porBarra[t].push(i);
+      });
       p.k=norma(p.n+' '+p.c+' '+p.m+' '+(p.b||[]).join(' '));
     });
     listo=true;
@@ -617,13 +628,13 @@ function escapar(s){ return String(s).replace(/[&<>"]/g,function(c){ return {'&'
 
 /* ==================== contar ==================== */
 function alLeer(codigo){
-  var i=porBarra[codigo];
-  if(i===undefined) i=porCodigo[codigo];
-  if(i===undefined){ sumarRaro(codigo); return; }
-  var p=padron[i];
-  if(modoEtq){ seleccion=p; pintarProducto(); mostrarPulso('$'); return; }
-  if(seleccion && seleccion.c===p.c){ sumar(1); }
-  else { seleccion=p; sumar(1); }
+  var lista=porBarra[codigo];
+  if(!lista){
+    var i=porCodigo[codigo];
+    if(i===undefined){ sumarRaro(codigo); return; }
+    lista=[i];
+  }
+  elegirVariante(lista, codigo);
 }
 function sumar(n){
   if(!seleccion || !actual) return;
@@ -662,6 +673,50 @@ function sumarRaro(codigo){
   pintarCuenta();
   mostrarPulso('?');
 }
+var grupoActual=[], codigoActual='';
+
+function elegirVariante(lista, codigo){
+  grupoActual=lista; codigoActual=codigo;
+  if(lista.length===1){ tomar(padron[lista[0]]); return; }
+  /* si ya venía contando una de estas variantes, sigue con esa */
+  if(seleccion){
+    for(var k=0;k<lista.length;k++){
+      if(padron[lista[k]].c===seleccion.c){ tomar(seleccion); return; }
+    }
+  }
+  abrirVariantes();
+}
+function recalcularGrupo(){
+  grupoActual=[]; codigoActual='';
+  if(!seleccion) return;
+  var b=(seleccion.b||[])[0];
+  if(b && porBarra[b]){ grupoActual=porBarra[b]; codigoActual=b; }
+}
+function tomar(p){
+  if(modoEtq){ seleccion=p; pintarProducto(); mostrarPulso('$'); return; }
+  if(seleccion && seleccion.c===p.c){ sumar(1); }
+  else { seleccion=p; sumar(1); }
+}
+function abrirVariantes(){
+  var c=$('listaVariantes');
+  $('tituloVariantes').textContent='Ese código lo comparten '+grupoActual.length+' productos';
+  c.innerHTML=grupoActual.map(function(i){
+    var p=padron[i];
+    var precio = (p.l>0?p.l:p.e);
+    return '<button class="fila" data-i="'+i+'"><span><b>'+escapar(p.n)+'</b>'+
+      '<small>'+p.c+(precio>0?' · $ '+Number(precio).toLocaleString('es-AR',{maximumFractionDigits:0}):'')+'</small></span>'+
+      '<span class="der"><b class="num">'+stockEn(p, actual?actual.dep:'mc')+'</b><small>en Dux</small></span></button>';
+  }).join('');
+  Array.prototype.forEach.call(c.querySelectorAll('.fila'),function(b){
+    b.addEventListener('click',function(){
+      cerrarHoja();
+      tomar(padron[+b.getAttribute('data-i')]);
+    });
+  });
+  abrirHoja('hojaVariantes');
+}
+$('btnVariante').addEventListener('click',function(){ if(grupoActual.length>1) abrirVariantes(); });
+
 function pintarProducto(){
   if(!seleccion){
     $('tarjetaProducto').classList.add('vacia');
@@ -671,6 +726,7 @@ function pintarProducto(){
     $('contadores').classList.add('oculto');
     $('precios').classList.add('oculto');
     $('pDif').classList.add('oculto');
+    $('btnVariante').classList.add('oculto');
     return;
   }
   var p=seleccion, it=actual ? actual.items[p.c] : null;
@@ -679,6 +735,9 @@ function pintarProducto(){
   $('tarjetaProducto').classList.remove('vacia');
   $('pNombre').textContent=p.n;
   $('pCod').textContent=p.c+(p.u?' · '+p.u:(p.r?' · '+p.r:''));
+  var varias = grupoActual.length>1 && grupoActual.some(function(i){ return padron[i].c===p.c; });
+  $('btnVariante').classList.toggle('oculto', !varias);
+  if(varias) $('btnVariante').textContent='Es otra variante ('+grupoActual.length+' con este código)';
   var fp=function(v){ return v>0 ? '$ '+Number(v).toLocaleString('es-AR',{maximumFractionDigits:0}) : '—'; };
   $('pLista').textContent=fp(p.l);
   $('pEfectivo').textContent=fp(p.e);
@@ -859,7 +918,7 @@ function pintarLista(){
       b.addEventListener('click',function(){
         var i=porCodigo[b.getAttribute('data-cod')];
         if(i===undefined) return;
-        seleccion=padron[i]; pintarProducto(); cerrarHoja();
+        seleccion=padron[i]; recalcularGrupo(); pintarProducto(); cerrarHoja();
         toast('Poné la cantidad que hay (o 0)');
       });
     });
@@ -881,7 +940,7 @@ function pintarLista(){
     b.addEventListener('click',function(){
       var i=porCodigo[b.getAttribute('data-cod')];
       if(i===undefined) return;
-      seleccion=padron[i]; pintarProducto(); cerrarHoja();
+      seleccion=padron[i]; recalcularGrupo(); pintarProducto(); cerrarHoja();
     });
   });
 }
